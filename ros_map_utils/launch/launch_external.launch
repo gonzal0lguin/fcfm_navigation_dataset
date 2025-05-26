@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<launch>
+
+    <arg name="visualization" default="true"/>
+    
+    <arg name="map_name" default="electrica"/>
+
+	<node pkg="map_server" type="map_server" name="map_server"
+		respawn="true" args="$(find ros_map_utils)/maps/$(arg map_name).yaml"/>
+
+    <include file="$(find ros_map_utils)/launch/navfn.launch">
+        <arg name="map_name" value="map"/>
+    </include>
+    
+
+
+</launch>
