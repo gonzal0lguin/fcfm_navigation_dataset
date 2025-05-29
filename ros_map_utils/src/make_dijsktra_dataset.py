@@ -20,9 +20,9 @@ class DjisktraCaller():
 
         self.poses_list = None
         
-        self.poses_path = "/home/gonz/Desktop/THESIS/code/global-planning/gnd_dataset/local_map_files_120/paths/"        
+        self.poses_path = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/"        
 
-        self.ranges = list(range(1012, 1100))
+        self.ranges = list(range(2064, 2065))
         self.load_poses(self.ranges)
 
         self.N_gen = 4
@@ -40,7 +40,7 @@ class DjisktraCaller():
 
         print(f"Map resolution: {self.map_resolution}")
 
-        self.out_pkl_file = "/home/gonz/Desktop/THESIS/code/global-planning/gnd_dataset/local_map_files_120/paths/djisktra_paths.pkl"
+        self.out_pkl_file = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/djisktra_paths.pkl"
         self.out_dict = {}
 
         self.timer = rospy.Timer(rospy.Duration(1 / 100), self.publish_tf_loop)
@@ -226,10 +226,10 @@ class DjisktraCaller():
 
                     except IndexError:
                         rospy.logwarn("Path not long enough. Skipping this goal.")
-                        continue
+                        pass
 
                 else:
-                    continue
+                    pass
 
                 # here you do something with the result if it is not None
                 # like save it accordingly to the start pose you have and the local map and so on...
@@ -242,9 +242,18 @@ class DjisktraCaller():
             self._idx_counter += 1
             
         # save the results
-        # with open(self.out_pkl_file, "wb") as f:
-        #     pickle.dump(self.out_dict, f)
-        #     rospy.loginfo(f"Saved {len(self.out_dict)} paths to {self.out_pkl_file}")
+        try:
+            with open(self.out_pkl_file, 'rb') as file:
+                data = pickle.load(file)
+        except:
+            rospy.logwarn(f"File {self.out_pkl_file} does not exist. Creating a new one.")
+            data = {}
+
+        data.update(self.out_dict)
+
+        with open(self.out_pkl_file, "wb") as f:
+            pickle.dump(data, f)
+            rospy.loginfo(f"Saved {len(self.out_dict)} paths to {self.out_pkl_file}")
 
         rospy.signal_shutdown("done")
 

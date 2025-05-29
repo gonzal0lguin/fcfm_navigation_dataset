@@ -11,19 +11,31 @@ from tf.transformations import euler_from_quaternion
 
 
 BAG_FILES = [
-    '/home/gonz/Desktop/bags/sec_a_4_2025-05-23-21-50-01.bag'
-            ]
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_1_2025-05-23-21-44-37.bag',
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_2_2025-05-23-21-47-14.bag',
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_3_2025-05-23-21-48-28.bag',
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_4_2025-05-23-21-50-01.bag',
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_5_2025-05-23-21-51-58.bag',
+    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_6_2025-05-23-21-54-03.bag'
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_1_2025-05-23-21-28-55.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_2_2025-05-23-21-30-07.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_3_2025-05-23-21-32-14.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_4_2025-05-23-21-34-43.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_5_2025-05-23-21-35-52.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_6_2025-05-23-21-37-48.bag',
+    '/home/tesistas/Desktop/GONZALO/bags/sec_b_7_2025-05-23-21-39-06.bag'
+]
 
-MAP_PATH = "/home/gonz/Desktop/THESIS/code/global-planning/gnd_dataset/ele2/ele2.png"
+MAP_PATH = "/home/tesistas/Desktop/GONZALO/fcfm_navigation_dataset/ros_map_utils/maps/cancha.png"
+DATA_DIR = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120"
 
-DATA_DIR = "/home/gonz/Desktop/THESIS/code/global-planning/gnd_dataset/local_map_files_120"
-LOCAL_MAPS_DIR  = os.path.join(DATA_DIR, "planning")
-LOCAL_PATHS_DIR = os.path.join(DATA_DIR, "paths")
-
+LOCAL_MAPS_DIR  = os.path.join(DATA_DIR, "aa")
+LOCAL_PATHS_DIR = os.path.join(DATA_DIR, "bb")
 
 
 MAP_RES = 0.1
-MAP_ORIGIN = [-34.8, -81.2]  # Origin of the map in world coordinates
+# MAP_ORIGIN = [-34.8, -81.2]  # electrica
+MAP_ORIGIN = [-57.2, -90.8]   # cancha
 N_VEL = 20  # Number of odom messages
 N_LIDAR = 3  # Number of lidar messages
 
@@ -100,6 +112,12 @@ def get_local_map(map, pose, map_origin, map_res, size_m=30, flip=True, color=No
     mapc, R = rotate_image(mapc, pose[2] * 180 / np.pi, center=(px, py))
 
     map_slice = mapc[py-size_px2:py+size_px2, px-size_px2:px+size_px2]
+
+    if (map_slice.shape[1] < size_px2*2) or (map_slice.shape[0] < size_px2*2):
+        # fill with invalid data
+        canvas = np.zeros((size_px2*2, size_px2*2, 3), dtype=np.uint8)
+        canvas[:map_slice.shape[0], :map_slice.shape[1]] = map_slice
+        map_slice = canvas 
     
     if color is not None:
         map_slice = cv.cvtColor(map_slice, cv.COLOR_RGB2GRAY)
@@ -111,7 +129,7 @@ def get_local_map(map, pose, map_origin, map_res, size_m=30, flip=True, color=No
     return map_slice, origin, R
 
 
-def draw_path_on_map(map, path_local, origin, map_res, size_m=30, color=(1, 0, 0), thickness=2):
+def draw_path_on_map(map, path_local_list, origin, map_res, size_m=30, color=(1, 0, 0), thickness=2):
     """
     Draw a path on the map.
     :param map: The map to draw on.
@@ -124,10 +142,11 @@ def draw_path_on_map(map, path_local, origin, map_res, size_m=30, color=(1, 0, 0
     map_cpy = map.copy()    
     map_cpy = cv.cvtColor(map_cpy, cv.COLOR_GRAY2RGB)
 
-    for (x, y) in path_local:
-        pxi = int(x / map_res + int(size_m / map_res))
-        pyi = int(y / map_res + int(size_m / map_res))
-        map_cpy = cv.circle(map_cpy, (pxi, pyi), 2, color, -1)
+    for path_local in path_local_list:
+        for (x, y) in path_local:
+            pxi = int(x / map_res + int(size_m / map_res))
+            pyi = int(y / map_res + int(size_m / map_res))
+            map_cpy = cv.circle(map_cpy, (pxi, pyi), 2, color, -1)
 
     return map_cpy
 
@@ -210,7 +229,7 @@ def main(start_index_data=0):
 
         print(len(amcl_msgs))
 
-        indices = np.linspace(10, len(amcl_msgs) - 100, 120, dtype=int)
+        indices = np.linspace(10, len(amcl_msgs) - 70, 90, dtype=np.int64)
 
         bridge = CvBridge()
 
@@ -224,18 +243,22 @@ def main(start_index_data=0):
 
             local_map, origin, _ = get_local_map(global_map, pose, MAP_ORIGIN, MAP_RES, color=81)
 
-            # show(local_map, title=f"Local Map at {i}")
-
             try:
                 sampled_path = get_path_lenght_interval(amcl_msgs_lst, i, lenght=15., N_wpts=15)
 
                 sampled_path_local = global_to_local(sampled_path, pose)
 
-                local_map_drawn = draw_path_on_map(local_map, sampled_path_local, origin, MAP_RES, color=(0, 1, 1), thickness=1)
+                local_map_drawn = draw_path_on_map(local_map, [sampled_path_local], origin, MAP_RES, color=(0, 1, 1), thickness=1)
 
                 odom_history = process_vel(get_last_msgs(odom_msgs, amcl_time, N_VEL))
                 scan_history = process_lidar(get_last_msgs(scan_msgs, amcl_time, N_LIDAR))
                 img_history  = process_img(get_last_msgs(img_msgs, amcl_time, 1), bridge)
+
+                if len(odom_history) < N_VEL / 2:
+                    print("not enough velocity samples")
+                    start_index_data -= 1
+                    continue
+
 
                 sampled_path_local = sampled_path_local[:, ::-1] # flip x and y idk y tf
 
@@ -249,9 +272,9 @@ def main(start_index_data=0):
                     "time": amcl_time,
                 })
 
-
                 # Save the data
                 save_id += start_index_data
+
                 write_pkl(data_dict, LOCAL_PATHS_DIR, f"{save_id}_0.pkl")
                 write_pkl(data_dict, LOCAL_PATHS_DIR, f"{save_id}_1.pkl")
 
@@ -259,9 +282,12 @@ def main(start_index_data=0):
                 cv.imwrite(path, local_map_drawn*255)
 
             except Exception as e:
+                save_id += start_index_data - 1
                 print(f"Error processing message {i}: {e}")
                 break
 
+        start_index_data = save_id + 1
+
 
 if __name__ == "__main__":
-    main(start_index_data=1090)
+    main(start_index_data=1518)

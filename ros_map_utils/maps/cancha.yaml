@@ -1,0 +1,7 @@
+image: canchagray.png
+resolution: 0.050000
+origin: [-57.2, -90.8, 0.000000]
+negate: 1
+occupied_thresh: 0
+free_thresh: 1
+

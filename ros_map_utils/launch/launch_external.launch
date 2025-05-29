@@ -3,7 +3,7 @@
 
     <arg name="visualization" default="true"/>
     
-    <arg name="map_name" default="electrica"/>
+    <arg name="map_name" default="cancha"/>
 
 	<node pkg="map_server" type="map_server" name="map_server"
 		respawn="true" args="$(find ros_map_utils)/maps/$(arg map_name).yaml"/>
@@ -11,7 +11,7 @@
     <include file="$(find ros_map_utils)/launch/navfn.launch">
         <arg name="map_name" value="map"/>
     </include>
+
+    <node name="rviz" pkg="rviz" type="rviz" output="screen" args="-d $(find ros_map_utils)/rviz/rviz.rviz"/>
     
-
-
 </launch>
