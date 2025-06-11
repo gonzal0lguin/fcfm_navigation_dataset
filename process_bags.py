@@ -165,22 +165,37 @@ def rotate_pointcloud(pcl, theta_rad):
     return pcl @ R.T  # Rotate each point
 
 
+def process_goal(msgs):
+    pass
+
+
 def process_vel(msgs):
     odom = [[o.twist.twist.linear.x, o.twist.twist.angular.z] for o in msgs[::2]] # use 10 out of the 20 messages sampled at 20Hz to get 10Hz 
     return odom
 
 
-def process_lidar(msgs):
+def process_lidar(msgs, crop_fov=200):
     
     points = []
     for pcl_msg in msgs:
-        pcl = np.array(list(pc2.read_points(pcl_msg, field_names=("x", "y", "z"), skip_nans=True)))
-        pcl = rotate_pointcloud(pcl, np.pi/2)
-        pcl = pcl[:, [1, 0, 2]]
+        pcl = np.array(list(pc2.read_points(pcl_msg, field_names=("x", "y", "z", "intensity", "reflectivity", "ambient"), skip_nans=True)))
+        
+        if crop_fov != -1:
+            azimuth = np.arctan2(pcl[:, 1], pcl[:, 0])  # y, x
+            ranges = np.linalg.norm(pcl, axis=1)
+
+            mask = (azimuth >= np.radians(crop_fov / 2)) & \
+                    (azimuth <= np.radians(crop_fov / 2)) & \
+                    (ranges >= 1)
+            
+            pcl = pcl[mask]
+
+        pcl[:, :3] = rotate_pointcloud(pcl[:, :3], np.pi/2) # rotate only points
+        pcl = pcl[:, [1, 0, 2, 3, 4, 5]]
 
         points.append(pcl)
 
-    return np.array(points)
+    return points
 
 
 def process_img(msgs, bridge):
@@ -229,7 +244,7 @@ def main(start_index_data=0):
 
         print(len(amcl_msgs))
 
-        indices = np.linspace(10, len(amcl_msgs) - 70, 90, dtype=np.int64)
+        indices = np.linspace(10, len(amcl_msgs) - 50, 100, dtype=np.int64)
 
         bridge = CvBridge()
 
@@ -258,15 +273,22 @@ def main(start_index_data=0):
                     print("not enough velocity samples")
                     start_index_data -= 1
                     continue
-
+                
+                elif len(scan_history) < N_LIDAR:
+                    print("not enough lidar samples")
+                    start_index_data -= 1
+                    continue
 
                 sampled_path_local = sampled_path_local[:, ::-1] # flip x and y idk y tf
+
+                global_goal = amcl_msgs_lst[-1] # get global goal in xy coords (same as robot pose)
 
                 data_dict.update({
                     "vel": odom_history,
                     "lidar": scan_history,
                     "camera": img_history,
                     "pose": pose,
+                    "goal": global_goal,
                     "local_map": local_map,
                     "path": sampled_path_local,
                     "time": amcl_time,
@@ -290,4 +312,4 @@ def main(start_index_data=0):
 
 
 if __name__ == "__main__":
-    main(start_index_data=1518)
+    main(start_index_data=528)

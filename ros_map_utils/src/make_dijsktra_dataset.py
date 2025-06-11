@@ -15,14 +15,13 @@ class DjisktraCaller():
     def __init__(self):
         pass
         
-
         self.br = tf2_ros.TransformBroadcaster()
 
         self.poses_list = None
         
         self.poses_path = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/"        
 
-        self.ranges = list(range(2064, 2065))
+        self.ranges = list(range(528, 1115))
         self.load_poses(self.ranges)
 
         self.N_gen = 4
