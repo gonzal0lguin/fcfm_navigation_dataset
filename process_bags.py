@@ -10,34 +10,40 @@ import yaml
 from tf.transformations import euler_from_quaternion
 
 
+FLIPXY = False
+DATASET_VERSION = 'v1.0'
+
 BAG_FILES = [
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_1_2025-05-23-21-44-37.bag',
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_2_2025-05-23-21-47-14.bag',
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_3_2025-05-23-21-48-28.bag',
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_4_2025-05-23-21-50-01.bag',
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_5_2025-05-23-21-51-58.bag',
-    # '/home/tesistas/Desktop/GONZALO/bags/sec_a_6_2025-05-23-21-54-03.bag'
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_1_2025-05-23-21-28-55.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_2_2025-05-23-21-30-07.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_3_2025-05-23-21-32-14.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_4_2025-05-23-21-34-43.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_5_2025-05-23-21-35-52.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_6_2025-05-23-21-37-48.bag',
-    '/home/tesistas/Desktop/GONZALO/bags/sec_b_7_2025-05-23-21-39-06.bag'
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_1_2025-05-23-21-44-37.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_2_2025-05-23-21-47-14.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_3_2025-05-23-21-48-28.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_4_2025-05-23-21-50-01.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_5_2025-05-23-21-51-58.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_6_2025-05-23-21-54-03.bag'
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_1_2025-05-23-21-28-55.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_2_2025-05-23-21-30-07.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_3_2025-05-23-21-32-14.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_4_2025-05-23-21-34-43.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_5_2025-05-23-21-35-52.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_6_2025-05-23-21-37-48.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_7_2025-05-23-21-39-06.bag'
 ]
 
 MAP_PATH = "/home/tesistas/Desktop/GONZALO/fcfm_navigation_dataset/ros_map_utils/maps/cancha.png"
-DATA_DIR = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120"
+DATA_DIR = "/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120"
 
-LOCAL_MAPS_DIR  = os.path.join(DATA_DIR, "aa")
-LOCAL_PATHS_DIR = os.path.join(DATA_DIR, "bb")
+LOCAL_MAPS_DIR  = os.path.join(DATA_DIR, DATASET_VERSION, "maps")
+LOCAL_PATHS_DIR = os.path.join(DATA_DIR, DATASET_VERSION, "data")
 
 
 MAP_RES = 0.1
 # MAP_ORIGIN = [-34.8, -81.2]  # electrica
 MAP_ORIGIN = [-57.2, -90.8]   # cancha
+
 N_VEL = 20  # Number of odom messages
 N_LIDAR = 3  # Number of lidar messages
+N_PREV = 9
+N_WAYPOINTS = 12
 
 odom_topic = "/panther/odometry/filtered"
 scan_topic = "/repub/ouster/points"
@@ -55,26 +61,6 @@ def world_to_map(map_origin, map_res, x, y):
     x_map = (x - map_origin[0]) / map_res
     y_map = (y - map_origin[1]) / map_res
     return x_map, y_map
-
-
-def get_path_lenght_interval(odometry_xy, start, lenght=15., N_wpts=15):
-    xsq = (odometry_xy[start+1:, 0] - odometry_xy[start:-1, 0]) ** 2
-    ysq = (odometry_xy[start+1:, 1] - odometry_xy[start:-1, 1]) ** 2
-    distances = np.cumsum(np.sqrt(xsq + ysq), axis=0)
-
-    stop_idx = np.where(distances >= lenght)[0][0] + start
-    ids = np.linspace(start, stop_idx, N_wpts, dtype=np.int64) # inlcude last point
-
-    return odometry_xy[ids]
-
-
-def rotate_image(image, angle, center=None):
-  if center is None:
-    center = tuple(np.array(image.shape[1::-1]) / 2)
-  
-  rot_mat = cv.getRotationMatrix2D(center, angle, 1.0)
-  result = cv.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv.INTER_LINEAR)
-  return result, rot_mat
 
 
 def global_to_local(points_world, robot_pose):
@@ -97,6 +83,91 @@ def global_to_local(points_world, robot_pose):
 
     local_points = translated @ R.T
     return local_points
+
+
+def get_path_length_interval(odometry_xy, start, lenght=12., N_wpts=15, reversed=False):
+    if not reversed:
+        xsq = (odometry_xy[start+1:, 0] - odometry_xy[start:-1, 0]) ** 2
+        ysq = (odometry_xy[start+1:, 1] - odometry_xy[start:-1, 1]) ** 2
+        distances = np.cumsum(np.sqrt(xsq + ysq), axis=0)
+        stop_idx = np.where(distances >= lenght)[0]
+        
+        if len(stop_idx) == 0:
+            # stop_idx = len(odometry_xy) - 1
+            return None
+        else:
+            stop_idx = stop_idx[0] + start
+        
+        ids = np.linspace(start, stop_idx, N_wpts, dtype=np.int64) # inlcude last point
+    
+    else: # search PASt waypoints
+        xsq = (odometry_xy[1:start, 0] - odometry_xy[:start-1, 0]) ** 2
+        ysq = (odometry_xy[1:start, 1] - odometry_xy[:start-1, 1]) ** 2
+        distances = np.cumsum(np.sqrt(xsq + ysq)[::-1], axis=0)
+        stop_idx = np.where(distances >= lenght)[0]
+        
+        if len(stop_idx) == 0:
+            stop_idx = 0
+            # return None
+        else:
+            stop_idx = len(distances) - stop_idx[0] 
+
+        ids = np.linspace(stop_idx, start, N_wpts, dtype=np.int64) # inlcude last point
+
+    return odometry_xy[ids]
+
+
+
+def get_path_time_interval(odometry_xy, times, start, duration_secs=10.0, N_wpts=15, reversed=False):
+
+    if times is None:
+        raise ValueError("You must provide the `times` array for time-based sampling.")
+    
+    if reversed:
+        start_time = times[start]
+        target_times = start_time - np.linspace(0, duration_secs, N_wpts)
+        # Ensure we don't go below zero index
+        valid_mask = target_times >= times[0]
+    else:
+        start_time = times[start]
+        target_times = start_time + np.linspace(0, duration_secs, N_wpts)
+        # Ensure we don't go beyond the last index
+        valid_mask = target_times <= times[-1]
+
+    target_times = target_times[valid_mask]
+
+    # Interpolate x and y separately at the desired time points
+    x_interp = np.interp(target_times, times, odometry_xy[:, 0])
+    y_interp = np.interp(target_times, times, odometry_xy[:, 1])
+    wpts_xy = np.stack((x_interp, y_interp), axis=-1)
+
+    return wpts_xy, target_times
+
+
+
+def make_paths(origin, gt_lst, gt_times, start, duration, nwpts, reversed=False):
+    timedelta = (duration + 1) / nwpts
+    time_path, times = get_path_time_interval(gt_lst, gt_times, start, duration_secs=duration, N_wpts=nwpts, reversed=reversed)
+    time_path_local = global_to_local(time_path, origin) 
+    if reversed:
+        time_path_local = time_path_local[::-1] # leave as [t-n, ..., t-1, t]
+    velocities = (time_path_local[1:] - time_path_local[:-1]) / timedelta
+
+    pathf = np.concatenate([time_path_local[1:], velocities], axis=1)
+
+    return pathf
+
+
+
+
+def rotate_image(image, angle, center=None):
+  if center is None:
+    center = tuple(np.array(image.shape[1::-1]) / 2)
+  
+  rot_mat = cv.getRotationMatrix2D(center, angle, 1.0)
+  result = cv.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv.INTER_LINEAR)
+  return result, rot_mat
+
 
 
 def get_local_map(map, pose, map_origin, map_res, size_m=30, flip=True, color=None):
@@ -140,7 +211,8 @@ def draw_path_on_map(map, path_local_list, origin, map_res, size_m=30, color=(1,
     """
 
     map_cpy = map.copy()    
-    map_cpy = cv.cvtColor(map_cpy, cv.COLOR_GRAY2RGB)
+    if map.ndim == 2:
+        map_cpy = cv.cvtColor(map_cpy, cv.COLOR_GRAY2RGB)
 
     for path_local in path_local_list:
         for (x, y) in path_local:
@@ -177,21 +249,23 @@ def process_vel(msgs):
 def process_lidar(msgs, crop_fov=200):
     
     points = []
-    for pcl_msg in msgs:
-        pcl = np.array(list(pc2.read_points(pcl_msg, field_names=("x", "y", "z", "intensity", "reflectivity", "ambient"), skip_nans=True)))
+    for pcl_msg in reversed(msgs): # msgs come in as [t, t-1, ..., t-n] and we need [t-n, ..., t-1, t]
+        pcl = np.array(list(pc2.read_points(pcl_msg, field_names=("x", "y", "z", "intensity"), skip_nans=True)))
         
         if crop_fov != -1:
             azimuth = np.arctan2(pcl[:, 1], pcl[:, 0])  # y, x
             ranges = np.linalg.norm(pcl, axis=1)
 
-            mask = (azimuth >= np.radians(crop_fov / 2)) & \
+            mask = (azimuth >= np.radians(-crop_fov / 2)) & \
                     (azimuth <= np.radians(crop_fov / 2)) & \
                     (ranges >= 1)
             
             pcl = pcl[mask]
 
-        pcl[:, :3] = rotate_pointcloud(pcl[:, :3], np.pi/2) # rotate only points
-        pcl = pcl[:, [1, 0, 2, 3, 4, 5]]
+        
+            pcl[:, :3] = rotate_pointcloud(pcl[:, :3], np.pi/2) # rotate only points
+        if FLIPXY:
+            pcl = pcl[:, [1, 0, 2, 3, 4, 5]]
 
         points.append(pcl)
 
@@ -203,6 +277,33 @@ def process_img(msgs, bridge):
     return images
     
 
+def voxelize_lidar(batched_pts, voxel_size=0.08, max_points=5120):
+    process_lidar = []
+    for points in batched_pts:
+        coords = np.floor(points[:, :3] / voxel_size).astype(np.int32)
+        _, inv, counts = np.unique(coords, axis=0, return_inverse=True, return_counts=True)
+
+        # Sum xyz and intensity by voxel
+        # xyz_intensity = np.concatenate([points[:, :3], points[:, 3]], axis=1)
+        sums = np.zeros((counts.shape[0], 4), dtype=np.float32)
+        np.add.at(sums, inv, points[:, :4])
+
+        # Divide by counts to get mean per voxel
+        means = sums / counts[:, None]
+
+        N = means.shape[0]
+        if N > max_points:
+            indices = np.random.choice(N, max_points, replace=False)
+            means = means[indices]
+        elif N < max_points:
+            pad = np.zeros((max_points - N, 4), dtype=np.float32)
+            means = np.concatenate((means, pad), axis=0)
+        
+        process_lidar.append(means)
+
+    return np.array(process_lidar)
+
+
 def show(img, title="Image"):
     cv.imshow(title, img)
     cv.waitKey(0)
@@ -210,6 +311,9 @@ def show(img, title="Image"):
 
 
 def write_pkl(data, path, filename):
+
+    if not os.path.exists(path):
+        os.makedirs(path)
 
     with open(os.path.join(path, filename), 'wb') as file:
         pickle.dump(data, file)
@@ -241,6 +345,7 @@ def main(start_index_data=0):
         bag.close()
 
         amcl_msgs_lst = np.array([[msg.pose.pose.position.x, msg.pose.pose.position.y] for (t, msg) in amcl_msgs])
+        amcl_time_lst = np.array([t for (t, msg) in amcl_msgs])
 
         print(len(amcl_msgs))
 
@@ -259,48 +364,71 @@ def main(start_index_data=0):
             local_map, origin, _ = get_local_map(global_map, pose, MAP_ORIGIN, MAP_RES, color=81)
 
             try:
-                sampled_path = get_path_lenght_interval(amcl_msgs_lst, i, lenght=15., N_wpts=15)
+                # sampled_path = get_path_length_interval(amcl_msgs_lst, i, lenght=12., N_wpts=15)
+                # previous_path = get_path_length_interval(amcl_msgs_lst, i, lenght=8., N_wpts=10, reversed=True)
+                sampled_path_local = make_paths(pose, amcl_msgs_lst, amcl_time_lst, i, duration=N_WAYPOINTS, nwpts=N_WAYPOINTS+1) # this yields 12 wpts asumming temp distance is 1 s
+                previous_path_local = make_paths(pose, amcl_msgs_lst, amcl_time_lst, i, duration=N_PREV//2, nwpts=N_PREV+1, reversed=True) # this yields 9 wpts
 
-                sampled_path_local = global_to_local(sampled_path, pose)
-
-                local_map_drawn = draw_path_on_map(local_map, [sampled_path_local], origin, MAP_RES, color=(0, 1, 1), thickness=1)
-
-                odom_history = process_vel(get_last_msgs(odom_msgs, amcl_time, N_VEL))
-                scan_history = process_lidar(get_last_msgs(scan_msgs, amcl_time, N_LIDAR))
-                img_history  = process_img(get_last_msgs(img_msgs, amcl_time, 1), bridge)
-
-                if len(odom_history) < N_VEL / 2:
-                    print("not enough velocity samples")
+                if len(sampled_path_local) < N_WAYPOINTS:
+                    print("Future path not long enough")
+                    save_id += start_index_data - 1
+                    break
+                
+                elif len(previous_path_local) < N_PREV:
+                    print("Previous path not long enough")
                     start_index_data -= 1
                     continue
+
+                # sampled_path_local = global_to_local(sampled_path, pose)
+                # previous_path_local = global_to_local(previous_path, pose)
+
+                local_map_drawn = draw_path_on_map(local_map, [sampled_path_local[:, :2]], origin, MAP_RES, color=(0, 1, 1), thickness=1)
+                local_map_drawn = draw_path_on_map(local_map_drawn, [previous_path_local[:, :2]], origin, MAP_RES, color=(1, 0, 1), thickness=1)
+
+                # odom_history = process_vel(get_last_msgs(odom_msgs, amcl_time, N_VEL))
+                # img_history  = process_img(get_last_msgs(img_msgs, amcl_time, 1), bridge)
+                scan_history = process_lidar(get_last_msgs(scan_msgs, amcl_time, N_LIDAR))
                 
-                elif len(scan_history) < N_LIDAR:
+                # if len(odom_history) < N_VEL / 2:
+                #     print("not enough velocity samples")
+                #     start_index_data -= 1
+                #     continue
+                
+                if len(scan_history) < N_LIDAR:
                     print("not enough lidar samples")
                     start_index_data -= 1
                     continue
+                
+                scan_dn = voxelize_lidar(scan_history, voxel_size=0.08, max_points=2560)
 
-                sampled_path_local = sampled_path_local[:, ::-1] # flip x and y idk y tf
+                if FLIPXY:
+                    sampled_path_local = sampled_path_local[:, ::-1] # flip x and y idk y tf
+                    previous_path_local = previous_path_local[:, ::-1] # flip x and y idk y tf
 
-                global_goal = amcl_msgs_lst[-1] # get global goal in xy coords (same as robot pose)
+                global_goal = global_to_local(amcl_msgs_lst[-1], pose) # get global goal in xy coords (same as robot pose)
 
                 data_dict.update({
-                    "vel": odom_history,
-                    "lidar": scan_history,
-                    "camera": img_history,
+                    # "vel": odom_history,
+                    # "lidar": scan_history,
+                    "lidar_dn": scan_dn,
+                    # "camera": img_history,
                     "pose": pose,
                     "goal": global_goal,
                     "local_map": local_map,
-                    "path": sampled_path_local,
+                    "path": sampled_path_local, # this includes vel
+                    "previous_path": previous_path_local, # this includes vel
                     "time": amcl_time,
                 })
 
-                # Save the data
+                # # Save the data
                 save_id += start_index_data
 
                 write_pkl(data_dict, LOCAL_PATHS_DIR, f"{save_id}_0.pkl")
-                write_pkl(data_dict, LOCAL_PATHS_DIR, f"{save_id}_1.pkl")
-
+                # # write_pkl(data_dict, LOCAL_PATHS_DIR, f"{save_id}_1.pkl")
+                print(save_id)
                 path = os.path.join(LOCAL_MAPS_DIR, f"{save_id}.png")
+                if not os.path.exists(LOCAL_MAPS_DIR):
+                    os.makedirs(LOCAL_MAPS_DIR)
                 cv.imwrite(path, local_map_drawn*255)
 
             except Exception as e:
@@ -312,4 +440,4 @@ def main(start_index_data=0):
 
 
 if __name__ == "__main__":
-    main(start_index_data=528)
+    main(start_index_data=531)
