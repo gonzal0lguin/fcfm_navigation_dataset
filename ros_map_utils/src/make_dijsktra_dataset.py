@@ -11,6 +11,9 @@ import pickle
 import cv2 as cv
 import time
 
+
+VERSION = 'v2.0'
+
 class DjisktraCaller():
     def __init__(self):
         pass
@@ -19,12 +22,12 @@ class DjisktraCaller():
 
         self.poses_list = None
         
-        self.poses_path = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/"        
+        self.poses_path = f"/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/{VERSION}/data"        
 
-        self.ranges = list(range(528, 1115))
+        self.ranges = list(range(649, 1453 + 1))
         self.load_poses(self.ranges)
 
-        self.N_gen = 4
+        self.N_gen = 6
         self._idx_counter = 0
 
         self.x, self.y, self.yaw = 0, 0, 0
@@ -39,7 +42,7 @@ class DjisktraCaller():
 
         print(f"Map resolution: {self.map_resolution}")
 
-        self.out_pkl_file = "/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/djisktra_paths.pkl"
+        self.out_pkl_file = f"/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/{VERSION}/djikstra.pkl"
         self.out_dict = {}
 
         self.timer = rospy.Timer(rospy.Duration(1 / 100), self.publish_tf_loop)
@@ -131,7 +134,7 @@ class DjisktraCaller():
     def set_pose(self, x, y, yaw):
         self.x = x
         self.y = y
-        self.yaw = yaw + np.pi/2
+        self.yaw = yaw #+ np.pi/2
 
     def select_pose(self):
         pass
@@ -185,7 +188,7 @@ class DjisktraCaller():
     
 
     @staticmethod
-    def get_path_lenght_interval(odometry_xy, start, lenght=15., N_wpts=15):
+    def get_path_lenght_interval(odometry_xy, start, lenght=12., N_wpts=13):
         xsq = (odometry_xy[start+1:, 0] - odometry_xy[start:-1, 0]) ** 2
         ysq = (odometry_xy[start+1:, 1] - odometry_xy[start:-1, 1]) ** 2
         distances = np.cumsum(np.sqrt(xsq + ysq), axis=0)
@@ -220,7 +223,7 @@ class DjisktraCaller():
                     plan_ret = np.array([[p.pose.position.x, p.pose.position.y] for p in plan_ret.path])
                     
                     try:
-                        sampled_path = self.get_path_lenght_interval(plan_ret, 0, lenght=15., N_wpts=15)
+                        sampled_path = self.get_path_lenght_interval(plan_ret, 0, lenght=12., N_wpts=15)
                         sampled_paths.append(sampled_path)
 
                     except IndexError:

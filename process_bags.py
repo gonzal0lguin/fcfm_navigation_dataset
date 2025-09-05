@@ -11,25 +11,25 @@ from tf.transformations import euler_from_quaternion
 
 
 FLIPXY = False
-DATASET_VERSION = 'v1.0'
+DATASET_VERSION = 'v2.0'
 
 BAG_FILES = [
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_1_2025-05-23-21-44-37.bag',
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_2_2025-05-23-21-47-14.bag',
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_3_2025-05-23-21-48-28.bag',
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_4_2025-05-23-21-50-01.bag',
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_5_2025-05-23-21-51-58.bag',
-    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_6_2025-05-23-21-54-03.bag'
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_1_2025-05-23-21-28-55.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_2_2025-05-23-21-30-07.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_3_2025-05-23-21-32-14.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_4_2025-05-23-21-34-43.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_5_2025-05-23-21-35-52.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_6_2025-05-23-21-37-48.bag',
-    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_7_2025-05-23-21-39-06.bag'
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_1_2025-05-23-21-44-37.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_2_2025-05-23-21-47-14.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_3_2025-05-23-21-48-28.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_4_2025-05-23-21-50-01.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_5_2025-05-23-21-51-58.bag',
+    '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_a_6_2025-05-23-21-54-03.bag'
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_1_2025-05-23-21-28-55.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_2_2025-05-23-21-30-07.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_3_2025-05-23-21-32-14.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_4_2025-05-23-21-34-43.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_5_2025-05-23-21-35-52.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_6_2025-05-23-21-37-48.bag',
+    # '/home/tesistas/Desktop/GONZALO/datasets/bags/sec_b_7_2025-05-23-21-39-06.bag'
 ]
 
-MAP_PATH = "/home/tesistas/Desktop/GONZALO/fcfm_navigation_dataset/ros_map_utils/maps/cancha.png"
+MAP_PATH = "/home/tesistas/Desktop/GONZALO/fcfm_navigation_dataset/ros_map_utils/maps/electrica.png"
 DATA_DIR = "/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120"
 
 LOCAL_MAPS_DIR  = os.path.join(DATA_DIR, DATASET_VERSION, "maps")
@@ -37,18 +37,19 @@ LOCAL_PATHS_DIR = os.path.join(DATA_DIR, DATASET_VERSION, "data")
 
 
 MAP_RES = 0.1
-# MAP_ORIGIN = [-34.8, -81.2]  # electrica
-MAP_ORIGIN = [-57.2, -90.8]   # cancha
+MAP_ORIGIN = [-34.8, -81.2]  # electrica
+# MAP_ORIGIN = [-57.2, -90.8]   # cancha
 
 N_VEL = 20  # Number of odom messages
 N_LIDAR = 3  # Number of lidar messages
-N_PREV = 9
-N_WAYPOINTS = 12
+N_PREV = 10
+N_WAYPOINTS = 13
 
 odom_topic = "/panther/odometry/filtered"
 scan_topic = "/repub/ouster/points"
 amcl_topic = "/amcl_pose"
 img_topic  = "/repub/camera/image_raw"
+obs_topic  = "/navae/raw_observation"
 
 
 def world_to_map(map_origin, map_res, x, y):
@@ -146,15 +147,21 @@ def get_path_time_interval(odometry_xy, times, start, duration_secs=10.0, N_wpts
 
 
 def make_paths(origin, gt_lst, gt_times, start, duration, nwpts, reversed=False):
-    timedelta = (duration + 1) / nwpts
+    timedelta = (duration + 1) / (nwpts + int(reversed))
     time_path, times = get_path_time_interval(gt_lst, gt_times, start, duration_secs=duration, N_wpts=nwpts, reversed=reversed)
     time_path_local = global_to_local(time_path, origin) 
     if reversed:
         time_path_local = time_path_local[::-1] # leave as [t-n, ..., t-1, t]
-    velocities = (time_path_local[1:] - time_path_local[:-1]) / timedelta
+    # velocities = (time_path_local[1:] - time_path_local[:-1]) / timedelta
+    vx = np.gradient(time_path_local[:, 0], timedelta)
+    vy = np.gradient(time_path_local[:, 1], timedelta)
+    ax = np.gradient(vx, timedelta)
+    ay = np.gradient(vy, timedelta)
 
-    pathf = np.concatenate([time_path_local[1:], velocities], axis=1)
+    pathf = np.concatenate([time_path_local, vx[:, np.newaxis], vy[:, np.newaxis], ax[:, np.newaxis], ay[:, np.newaxis]], axis=1)
 
+    # print(times[1] - times[0], timedelta, pathf.shape)
+    
     return pathf
 
 
@@ -179,10 +186,12 @@ def get_local_map(map, pose, map_origin, map_res, size_m=30, flip=True, color=No
         mapc = np.flipud(map).copy()
     else:
         mapc = map.copy()
-
-    mapc, R = rotate_image(mapc, pose[2] * 180 / np.pi, center=(px, py))
-
+    mapc, R = rotate_image(mapc, pose[2] * 180 / np.pi-90, center=(px, py))
     map_slice = mapc[py-size_px2:py+size_px2, px-size_px2:px+size_px2]
+    # import matplotlib.pyplot as plt
+    # print(px, py)
+    # plt.imshow(map_slice)
+    # plt.show()
 
     if (map_slice.shape[1] < size_px2*2) or (map_slice.shape[0] < size_px2*2):
         # fill with invalid data
@@ -196,7 +205,7 @@ def get_local_map(map, pose, map_origin, map_res, size_m=30, flip=True, color=No
         map_slice[map_slice == color] = 0
 
     origin = [px, py]
-
+    map_slice = np.fliplr(map_slice)
     return map_slice, origin, R
 
 
@@ -215,9 +224,9 @@ def draw_path_on_map(map, path_local_list, origin, map_res, size_m=30, color=(1,
         map_cpy = cv.cvtColor(map_cpy, cv.COLOR_GRAY2RGB)
 
     for path_local in path_local_list:
-        for (x, y) in path_local:
-            pxi = int(x / map_res + int(size_m / map_res))
-            pyi = int(y / map_res + int(size_m / map_res))
+        for (x, y) in path_local[:, :2]:
+            pxi = int(y / map_res + int(size_m / map_res))
+            pyi = int(x / map_res + int(size_m / map_res))
             map_cpy = cv.circle(map_cpy, (pxi, pyi), 2, color, -1)
 
     return map_cpy
@@ -261,9 +270,8 @@ def process_lidar(msgs, crop_fov=200):
                     (ranges >= 1)
             
             pcl = pcl[mask]
-
         
-            pcl[:, :3] = rotate_pointcloud(pcl[:, :3], np.pi/2) # rotate only points
+            # pcl[:, :3] = rotate_pointcloud(pcl[:, :3], np.pi/2) # rotate only points
         if FLIPXY:
             pcl = pcl[:, [1, 0, 2, 3, 4, 5]]
 
@@ -303,6 +311,18 @@ def voxelize_lidar(batched_pts, voxel_size=0.08, max_points=5120):
 
     return np.array(process_lidar)
 
+def select_indices_t_apart(times, T):
+    times = np.asarray(times)
+    indices = [0]
+    current_time = times[0]
+
+    for i in range(1, len(times)):
+        if times[i] - current_time >= T:
+            indices.append(i)
+            current_time = times[i]
+
+    return indices
+
 
 def show(img, title="Image"):
     cv.imshow(title, img)
@@ -329,10 +349,12 @@ def main(start_index_data=0):
         scan_msgs = []
         amcl_msgs = []
         img_msgs  = []
+        goal_msgs = []
+        past_tr_msgs = []
         data_dict = {}
 
         with rosbag.Bag(BAG, 'r') as bag:
-            for topic, msg, t in bag.read_messages(topics=["map", odom_topic, scan_topic, amcl_topic, img_topic]):
+            for topic, msg, t in bag.read_messages(topics=["map", odom_topic, scan_topic, amcl_topic, img_topic, obs_topic]):
                 timestamp = t.to_sec()
                 if topic == odom_topic:
                     odom_msgs.append((timestamp, msg))
@@ -342,6 +364,11 @@ def main(start_index_data=0):
                     amcl_msgs.append((timestamp, msg))
                 elif topic == img_topic:
                     img_msgs.append((timestamp, msg))
+                elif topic == obs_topic:
+                    scan_msgs.append((timestamp, msg.lidar))
+                    goal_msgs.append((timestamp, msg.goal_rel))
+                    past_tr_msgs.append((timestamp, msg.past_path))
+
         bag.close()
 
         amcl_msgs_lst = np.array([[msg.pose.pose.position.x, msg.pose.pose.position.y] for (t, msg) in amcl_msgs])
@@ -349,9 +376,8 @@ def main(start_index_data=0):
 
         print(len(amcl_msgs))
 
-        indices = np.linspace(10, len(amcl_msgs) - 50, 100, dtype=np.int64)
-
-        bridge = CvBridge()
+        indices = select_indices_t_apart(amcl_time_lst, T=0.6)[1:]
+        #np.linspace(10, len(amcl_msgs) - 50, 100, dtype=np.int64)
 
         for save_id, i in enumerate(indices):
             amcl_time, amcl_msg = amcl_msgs[i]
@@ -359,7 +385,7 @@ def main(start_index_data=0):
             # Get the local map
             q = amcl_msg.pose.pose.orientation
             _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-            pose = [amcl_msg.pose.pose.position.x, amcl_msg.pose.pose.position.y, yaw - np.pi/2]
+            pose = [amcl_msg.pose.pose.position.x, amcl_msg.pose.pose.position.y, yaw]
 
             local_map, origin, _ = get_local_map(global_map, pose, MAP_ORIGIN, MAP_RES, color=81)
 
@@ -368,7 +394,6 @@ def main(start_index_data=0):
                 # previous_path = get_path_length_interval(amcl_msgs_lst, i, lenght=8., N_wpts=10, reversed=True)
                 sampled_path_local = make_paths(pose, amcl_msgs_lst, amcl_time_lst, i, duration=N_WAYPOINTS, nwpts=N_WAYPOINTS+1) # this yields 12 wpts asumming temp distance is 1 s
                 previous_path_local = make_paths(pose, amcl_msgs_lst, amcl_time_lst, i, duration=N_PREV//2, nwpts=N_PREV+1, reversed=True) # this yields 9 wpts
-
                 if len(sampled_path_local) < N_WAYPOINTS:
                     print("Future path not long enough")
                     save_id += start_index_data - 1
@@ -378,7 +403,8 @@ def main(start_index_data=0):
                     print("Previous path not long enough")
                     start_index_data -= 1
                     continue
-
+                previous_path_local = previous_path_local[len(previous_path_local)-N_PREV:]
+                sampled_path_local = sampled_path_local[1:]
                 # sampled_path_local = global_to_local(sampled_path, pose)
                 # previous_path_local = global_to_local(previous_path, pose)
 
@@ -440,4 +466,4 @@ def main(start_index_data=0):
 
 
 if __name__ == "__main__":
-    main(start_index_data=531)
+    main(start_index_data=649)    

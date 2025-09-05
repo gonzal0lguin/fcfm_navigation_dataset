@@ -10,12 +10,14 @@ import yaml
 from tf.transformations import euler_from_quaternion
 
 from process_bags import global_to_local, draw_path_on_map
+from expand_paths_data import filter_unique_trajectories
 
-
-GT_PATHS_FILE = '/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/djisktra_paths.pkl'
-DATA_FILES = '/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/bb/'
-IMGS_FILES = '/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/aa/'
-DATA_PKL = '/home/tesistas/Desktop/GONZALO/gnd_dataset/local_map_files_120/data_fcfm_only.pkl'
+VERSION = 'v2.3'
+# INPUT_VERSION = 'v2.1'
+GT_PATHS_FILE = f"/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/{VERSION}/djikstra.pkl"
+DATA_FILES = f'/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/{VERSION}/data/'
+IMGS_FILES   = f'/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/{VERSION}/maps/'
+DATA_PKL   = f'/home/tesistas/Desktop/GONZALO/datasets/gnd_dataset/local_map_files_120/fcfm_{VERSION}.pkl'
 
 
 def _process_lidar(batched_pts, voxel_size=0.08, max_points=5120):
@@ -55,10 +57,28 @@ def _process_lidar(batched_pts, voxel_size=0.08, max_points=5120):
 
 def process_paths(paths, path_real, pose):
 
-    paths = [global_to_local(path, pose)[:, ::-1] for path in paths]
-    paths.append(path_real)
+    paths = np.array([global_to_local(path, pose) for path in paths])
+    # paths.append(path_real)
+    
+    vx, vy, ax, ay = [], [], [], []
+    for path in paths:
+        vx.append(np.gradient(path[:, 0], 1))
+        vy.append(np.gradient(path[:, 1], 1))
+        ax.append(np.gradient(vx[-1], 1))
+        ay.append(np.gradient(vy[-1], 1))
 
-    return paths
+    if len(vx) >= 1:    
+        vx = np.array(vx)[:, 1:-2]
+        vy = np.array(vy)[:, 1:-2]
+        ax = np.array(ax)[:, 1:-2]
+        ay = np.array(ay)[:, 1:-2]
+
+        pathf = np.concatenate([paths[:, 1:-2], vx[:, :, np.newaxis], vy[:, :, np.newaxis], ax[:, :, np.newaxis], ay[:, :, np.newaxis]], axis=-1) 
+        pathf = np.concatenate([path_real[np.newaxis, :-1, :], pathf], axis=0)   
+    else:
+        pathf = path_real[np.newaxis]
+
+    return pathf[:, :12, :]
 
 
 def expand_data_pkl(init, end):
@@ -71,11 +91,10 @@ def expand_data_pkl(init, end):
         print(f"File: {file_path} does not exits. Creating...")
         data = dict()
         data['ids'] = [] 
-        data['root'] = ('/home/jing/Documents/gn/database/datasets/local_map_files_120/paths', '/home/jing/Documents/gn/database/datasets/local_map_files_120/planning')
+        data['root'] = (f'{VERSION}/maps', f'{VERSION}/data')
 
     for i in range(init, end+1):
         data['ids'].append((f'{i}_0.pkl', f'{i}.png'))
-        data['ids'].append((f'{i}_1.pkl', f'{i}.png'))
 
     with open(file_path, 'wb') as f:
         pickle.dump(data, f)
@@ -107,9 +126,9 @@ def write_gt_trajectories_posterior(start, end):
             data = pickle.load(f)
         
         gt_paths = data['all_paths']
-        gt_paths = [gt_path[:, ::-1] for gt_path in gt_paths]
+        # gt_paths = [gt_path[:, ::-1] for gt_path in gt_paths]
 
-        img = cv.imread(os.path.join(IMGS_FILES, f"{i}.png"), cv.IMREAD_GRAYSCALE)
+        img = cv.imread(os.path.join(IMGS_FILES, f"{i}.png"))#, cv.IMREAD_GRAYSCALE)
 
         img = draw_path_on_map(img, gt_paths, 0, 0.1, color=(0, 255, 255), thickness=1)
 
@@ -129,14 +148,19 @@ if __name__ == "__main__":
         with open(file_path, 'rb') as f:
             data = pickle.load(f)
 
-        all_paths = process_paths(all_paths_data, path_real=data['path'], pose=data['pose'])
+        if data['path'].shape[0] != 12:
+            all_paths = process_paths(all_paths_data, path_real=data['path'], pose=data['pose'])
+            all_paths = filter_unique_trajectories(all_paths)[0]
+            # Insert the new 'all_paths' entry
+            data['all_paths'] = all_paths
 
-        # Insert the new 'all_paths' entry
-        data['all_paths'] = all_paths
-        data['imu'] = []
-        data['scan'] = np.zeros((1, 3))
-        data['lidar_array'] = []
-        data['lidar_dn'] = _process_lidar(data['lidar']) #fix_lidar2(data)
+        else:
+            data['all_paths'] = data['path'][np.newaxis][:12, :]
+
+        # data['imu'] = []
+        # data['scan'] = np.zeros((1, 3))
+        # data['lidar_array'] = []
+        # data['lidar_dn'] = _process_lidar(data['lidar']) #fix_lidar2(data)
         
 
         # Save back the updated data
@@ -145,34 +169,13 @@ if __name__ == "__main__":
 
         print(f"Done processing file {filename}")
 
-        file_path = os.path.join(DATA_FILES, filename.replace('_0', '_1') + '.pkl')
-
-        # Load the existing data
-        with open(file_path, 'rb') as f:
-            data = pickle.load(f)
-
-        all_paths = process_paths(all_paths_data, path_real=data['path'], pose=data['pose'])
-
-        # Insert the new 'all_paths' entry
-        data['all_paths'] = all_paths
-        data['imu'] = []
-        data['scan'] = np.zeros((2, 3))
-        data['lidar_array'] = []
-        data['lidar_dn'] = _process_lidar(data['lidar']) #fix_lidar2(data)
 
 
-        # Save back the updated data
-        with open(file_path, 'wb') as f:
-            pickle.dump(data, f)
-
-        print(f"Done processing file {filename.replace('_0', '_1')}")
-
-
-    print("Done")
+    # print("Done")
 
     # expand data
-    # expand_data_pkl(0, 1114)
+    # expand_data_pkl(0, 1453)
 
     # write the gt paths into the images.
-    write_gt_trajectories_posterior(0, 1115)
+    # write_gt_trajectories_posterior(0, 1452)
 
